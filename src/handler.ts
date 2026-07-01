@@ -12,9 +12,8 @@ import { getPathname, sendError, setCacheHeaders, setCommonHeaders } from "./htt
 import type { GitHubRelease } from "./types.js";
 
 const CHANNEL = {
-  ALL: "all",
-  BETA: "beta",
   STABLE: "stable",
+  BETA: "beta",
 } as const;
 
 type Channel = (typeof CHANNEL)[keyof typeof CHANNEL];
@@ -27,14 +26,12 @@ const getQueryValue = (value: VercelRequest["query"][string]): string | undefine
   return value;
 };
 
-const parseChannel = (
-  req: VercelRequest,
-  defaultChannel: Channel,
-  allowedChannels: Channel[] = CHANNELS
-): Channel | undefined => {
-  const value = getQueryValue(req.query.channel) || defaultChannel;
+const parseChannel = (req: VercelRequest): Channel | null | undefined => {
+  const value = getQueryValue(req.query.channel);
 
-  if (!allowedChannels.includes(value as Channel)) return void 0;
+  if (!value) return void 0;
+
+  if (!CHANNELS.includes(value as Channel)) return null;
 
   return value as Channel;
 };
@@ -51,9 +48,9 @@ const findInstallerUrl = (release: GitHubRelease, platform: string): string | un
 
 const filterReleasesByChannel = (
   releases: GitHubRelease[],
-  channel: Channel
+  channel: Channel | undefined
 ): GitHubRelease[] => {
-  if (channel === CHANNEL.ALL) return releases;
+  if (!channel) return releases;
 
   return releases.filter((release) => {
     return channel === CHANNEL.BETA ? release.prerelease : !release.prerelease;
@@ -61,12 +58,18 @@ const filterReleasesByChannel = (
 };
 
 const getLatestReleaseByChannel = async (
-  channel: Channel,
+  channel: Channel | undefined,
   fallbackToStable = true
 ): Promise<GitHubRelease | undefined> => {
   const config = getConfig();
 
-  if (channel === CHANNEL.STABLE || channel === CHANNEL.ALL) {
+  if (!channel) {
+    const releases = await listReleases(config);
+
+    return releases[0];
+  }
+
+  if (channel === CHANNEL.STABLE) {
     return getLatestStableRelease(config);
   }
 
@@ -81,14 +84,14 @@ const handleDownload = async (req: VercelRequest, res: VercelResponse): Promise<
   const config = getConfig();
   const platform = getQueryValue(req.query.platform);
   const version = getQueryValue(req.query.version);
-  const channel = parseChannel(req, CHANNEL.STABLE, [CHANNEL.STABLE, CHANNEL.BETA]);
+  const channel = parseChannel(req);
 
   if (typeof platform !== "string" || !SUPPORTED_PLATFORMS.includes(platform as never)) {
     sendError(res, 400, `Invalid platform. Use one of: ${SUPPORTED_PLATFORMS.join(", ")}`);
     return;
   }
 
-  if (!channel) {
+  if (channel === null) {
     sendError(res, 400, "Invalid channel. Use one of: stable, beta");
     return;
   }
@@ -120,9 +123,9 @@ const handleDownload = async (req: VercelRequest, res: VercelResponse): Promise<
 
 const handleUpdate = async (req: VercelRequest, res: VercelResponse): Promise<void> => {
   const config = getConfig();
-  const channel = parseChannel(req, CHANNEL.STABLE, [CHANNEL.STABLE, CHANNEL.BETA]);
+  const channel = parseChannel(req);
 
-  if (!channel) {
+  if (channel === null) {
     sendError(res, 400, "Invalid channel. Use one of: stable, beta");
     return;
   }
@@ -147,9 +150,9 @@ const handleJsonRoute = async (
   const config = getConfig();
 
   if (pathname === "/" || pathname === "") {
-    const channel = parseChannel(_req, CHANNEL.ALL);
+    const channel = parseChannel(_req);
 
-    if (!channel) {
+    if (channel === null) {
       sendError(res, 400, `Invalid channel. Use one of: ${CHANNELS.join(", ")}`);
       return true;
     }
@@ -161,10 +164,10 @@ const handleJsonRoute = async (
   }
 
   if (pathname === "/latest") {
-    const channel = parseChannel(_req, CHANNEL.STABLE, [CHANNEL.STABLE, CHANNEL.BETA]);
+    const channel = parseChannel(_req);
 
-    if (!channel) {
-      sendError(res, 400, "Invalid channel. Use one of: stable, beta");
+    if (channel === null) {
+      sendError(res, 400, `Invalid channel. Use one of: ${CHANNELS.join(", ")}`);
       return true;
     }
 

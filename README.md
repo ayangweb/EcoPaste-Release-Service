@@ -6,21 +6,29 @@ This project intentionally uses Vercel native handlers instead of Hono. The API 
 
 ## Endpoints
 
-| Method | Path | Description |
-| --- | --- | --- |
-| `GET` | `/?channel=all` | List EcoPaste releases with supported installer assets. |
-| `GET` | `/?channel=stable` | List stable releases. |
-| `GET` | `/?channel=beta` | List prereleases. |
-| `GET` | `/latest?channel=stable` | Return the latest stable GitHub release. |
-| `GET` | `/latest?channel=beta` | Return the latest prerelease. |
-| `GET` | `/download?channel=stable&platform=windows-x64` | Redirect to the latest stable installer for a platform. |
-| `GET` | `/download?channel=beta&platform=macos-arm` | Redirect to the latest prerelease installer; falls back to stable when no prerelease exists. |
-| `GET` | `/download?version=0.6.0-beta.3&platform=macos-arm` | Redirect to a specific release installer. |
-| `GET` | `/update?channel=stable` | Redirect to the latest stable release `latest.json`. |
-| `GET` | `/update?channel=beta` | Redirect to the latest prerelease `latest.json`; falls back to stable when no prerelease exists. |
-| `GET` | `/health` | Return a small health payload. |
+| Method | Path        | Description                                             |
+| ------ | ----------- | ------------------------------------------------------- |
+| `GET`  | `/`         | List EcoPaste releases with supported installer assets. |
+| `GET`  | `/latest`   | Return the latest release for a channel.                |
+| `GET`  | `/download` | Redirect to an installer for a platform.                |
+| `GET`  | `/update`   | Redirect to a release `latest.json`.                    |
+| `GET`  | `/health`   | Return a small health payload.                          |
 
-`channel` defaults to `all` on `/`, and to `stable` on `/latest`, `/download`, and `/update`.
+## Query Parameters
+
+| Endpoint                               | Parameter  | Values                                                            | Default                           | Description                                                                            |
+| -------------------------------------- | ---------- | ----------------------------------------------------------------- | --------------------------------- | -------------------------------------------------------------------------------------- |
+| `/`, `/latest`, `/download`, `/update` | `channel`  | `stable`, `beta`                                                  | Omitted, which means all releases | Selects a release channel. Leave it empty to use the newest release from all channels. |
+| `/download`                            | `platform` | `windows-x64`, `macos-arm`, `macos-x64`                           | Required                          | Selects the installer platform.                                                        |
+| `/download`                            | `version`  | Release tag or version, such as `v0.6.0-beta.3` or `0.6.0-beta.3` | Latest release for `channel`      | Selects a specific release instead of the latest channel release.                      |
+
+Example:
+
+```text
+/download?channel=beta&platform=macos-arm
+```
+
+When `channel=beta` is used on `/download` or `/update`, the service falls back to `stable` if no prerelease exists.
 
 Supported platforms follow the current Rust-first EcoPaste release workflow:
 
