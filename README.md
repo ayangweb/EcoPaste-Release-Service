@@ -10,8 +10,8 @@ This project intentionally uses Vercel native handlers instead of Hono. The API 
 | ------ | ----------- | ------------------------------------------------------- |
 | `GET`  | `/`         | List EcoPaste releases with supported installer assets. |
 | `GET`  | `/latest`   | Return the latest release for a channel.                |
-| `GET`  | `/download` | Redirect to an installer for a platform.                |
-| `GET`  | `/update`   | Redirect to a release `latest.json`.                    |
+| `GET`  | `/download` | Redirect or proxy an installer/update asset.            |
+| `GET`  | `/update`   | Return release `latest.json` with Vercel download URLs. |
 | `GET`  | `/health`   | Return a small health payload.                          |
 
 ## Query Parameters
@@ -19,8 +19,10 @@ This project intentionally uses Vercel native handlers instead of Hono. The API 
 | Endpoint                               | Parameter  | Values                                                            | Default                           | Description                                                                            |
 | -------------------------------------- | ---------- | ----------------------------------------------------------------- | --------------------------------- | -------------------------------------------------------------------------------------- |
 | `/`, `/latest`, `/download`, `/update` | `channel`  | `stable`, `beta`                                                  | Omitted, which means all releases | Selects a release channel. Leave it empty to use the newest release from all channels. |
-| `/download`                            | `platform` | `windows-x64`, `macos-arm`, `macos-x64`                           | Required                          | Selects the installer platform.                                                        |
+| `/download`                            | `platform` | `windows-x64`, `macos-arm`, `macos-x64`                           | Required unless `asset` is set    | Selects the installer platform.                                                        |
 | `/download`                            | `version`  | Release tag or version, such as `v0.6.0-beta.3` or `0.6.0-beta.3` | Latest release for `channel`      | Selects a specific release instead of the latest channel release.                      |
+| `/download`                            | `asset`    | Release asset file name, such as `EcoPaste_x64.app.tar.gz`        | Empty                             | Downloads an exact updater asset. Used by rewritten `/update` manifests.               |
+| `/download`                            | `proxy`    | `1`, `true`                                                       | Empty                             | Streams the asset through this service instead of redirecting.                         |
 
 Example:
 
@@ -44,9 +46,14 @@ Linux is intentionally not exposed.
 GITHUB_REPOSITORY=EcoPasteHub/EcoPaste
 GITHUB_TOKEN=
 DOWNLOAD_PROXY_URL=
+PUBLIC_BASE_URL=
 ```
 
 `DOWNLOAD_PROXY_URL` is optional. Leave it empty to redirect directly to GitHub, or set a prefix such as `https://gh-proxy.com/` to mirror the legacy API behavior.
+
+`PUBLIC_BASE_URL` is optional. Set it to your custom Vercel domain, such as `https://download.example.com`, when you want `/update` to generate stable updater URLs for that domain. If it is empty, the service uses the incoming request host.
+
+`/update` fetches the release `latest.json`, keeps the signatures unchanged, and rewrites every `platforms.*.url` to `/download?version=<tag>&asset=<file>&proxy=1` on this service. This keeps updater traffic on your Vercel/custom domain instead of returning GitHub URLs to the client.
 
 For EcoPaste's current Rust updater settings, use:
 

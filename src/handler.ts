@@ -1,15 +1,19 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { Readable } from "node:stream";
 import { getConfig } from "./config.js";
 import { PLATFORM_ASSET_SUFFIX, SUPPORTED_PLATFORMS } from "./constants.js";
 import {
+  fetchReleaseManifest,
   findRelease,
+  getGitHubHeaders,
   getLatestPrerelease,
   getLatestStableRelease,
-  getReleaseManifestUrl,
+  getProxyUrl,
+  getReleaseAssetUrl,
   listReleases,
 } from "./github.js";
 import { getPathname, sendError, setCacheHeaders, setCommonHeaders } from "./http.js";
-import type { GitHubRelease } from "./types.js";
+import type { GitHubRelease, UpdateManifest } from "./types.js";
 
 const CHANNEL = {
   STABLE: "stable",
@@ -24,6 +28,32 @@ const getQueryValue = (value: VercelRequest["query"][string]): string | undefine
   if (Array.isArray(value)) return value[0];
 
   return value;
+};
+
+const getHeaderValue = (
+  value: VercelRequest["headers"][string]
+): string | undefined => {
+  if (Array.isArray(value)) return value[0];
+
+  return value;
+};
+
+const normalizeBaseUrl = (url: string): string => {
+  const withProtocol = /^https?:\/\//.test(url) ? url : `https://${url}`;
+
+  return withProtocol.replace(/\/$/, "");
+};
+
+const getPublicBaseUrl = (req: VercelRequest): string => {
+  const config = getConfig();
+
+  if (config.publicBaseUrl) return normalizeBaseUrl(config.publicBaseUrl);
+
+  const host =
+    getHeaderValue(req.headers["x-forwarded-host"]) || req.headers.host || "localhost";
+  const protocol = getHeaderValue(req.headers["x-forwarded-proto"]) || "https";
+
+  return `${protocol}://${host}`.replace(/\/$/, "");
 };
 
 const parseChannel = (req: VercelRequest): Channel | null | undefined => {
@@ -44,6 +74,104 @@ const findInstallerUrl = (release: GitHubRelease, platform: string): string | un
   return release.assets.find((asset) => {
     return asset.name.endsWith(suffix);
   })?.browser_download_url;
+};
+
+const getAssetNameFromUrl = (url: string): string | undefined => {
+  try {
+    const pathname = new URL(url).pathname;
+    const assetName = pathname.split("/").filter(Boolean).pop();
+
+    return assetName ? decodeURIComponent(assetName) : void 0;
+  } catch {
+    return void 0;
+  }
+};
+
+const isSafeAssetName = (assetName: string): boolean => {
+  return assetName.length > 0 && !assetName.includes("/") && !assetName.includes("\\");
+};
+
+const shouldProxyDownload = (req: VercelRequest): boolean => {
+  const value = getQueryValue(req.query.proxy);
+
+  return value === "1" || value === "true";
+};
+
+const rewriteUpdateManifest = (
+  manifest: UpdateManifest,
+  release: GitHubRelease,
+  req: VercelRequest
+): UpdateManifest => {
+  if (!manifest.platforms) return manifest;
+
+  const baseUrl = getPublicBaseUrl(req);
+  const platforms = Object.fromEntries(
+    Object.entries(manifest.platforms).map(([platform, value]) => {
+      const assetName = getAssetNameFromUrl(value.url);
+
+      if (!assetName || !isSafeAssetName(assetName)) return [platform, value];
+
+      const url = new URL("/download", baseUrl);
+      url.searchParams.set("version", release.tag_name);
+      url.searchParams.set("asset", assetName);
+      url.searchParams.set("proxy", "1");
+
+      return [
+        platform,
+        {
+          ...value,
+          url: url.toString(),
+        },
+      ];
+    })
+  );
+
+  return {
+    ...manifest,
+    platforms,
+  };
+};
+
+const proxyReleaseAsset = async (
+  res: VercelResponse,
+  config: ReturnType<typeof getConfig>,
+  release: GitHubRelease,
+  assetName: string
+): Promise<void> => {
+  const downloadUrl = getReleaseAssetUrl(config.repository, release.tag_name, assetName);
+  const response = await fetch(downloadUrl, {
+    headers: getGitHubHeaders(config),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`GitHub asset request failed: ${response.status} ${detail}`);
+  }
+
+  for (const headerName of [
+    "content-length",
+    "content-type",
+    "etag",
+    "last-modified",
+    "accept-ranges",
+  ]) {
+    const value = response.headers.get(headerName);
+    if (value) res.setHeader(headerName, value);
+  }
+
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="${assetName.replace(/"/g, "")}"`
+  );
+  res.status(response.status);
+
+  if (!response.body) {
+    const buffer = Buffer.from(await response.arrayBuffer());
+    res.end(buffer);
+    return;
+  }
+
+  Readable.fromWeb(response.body).pipe(res);
 };
 
 const filterReleasesByChannel = (
@@ -84,10 +212,19 @@ const handleDownload = async (req: VercelRequest, res: VercelResponse): Promise<
   const config = getConfig();
   const platform = getQueryValue(req.query.platform);
   const version = getQueryValue(req.query.version);
+  const assetName = getQueryValue(req.query.asset);
   const channel = parseChannel(req);
 
-  if (typeof platform !== "string" || !SUPPORTED_PLATFORMS.includes(platform as never)) {
+  if (
+    typeof assetName !== "string" &&
+    (typeof platform !== "string" || !SUPPORTED_PLATFORMS.includes(platform as never))
+  ) {
     sendError(res, 400, `Invalid platform. Use one of: ${SUPPORTED_PLATFORMS.join(", ")}`);
+    return;
+  }
+
+  if (typeof assetName === "string" && !isSafeAssetName(assetName)) {
+    sendError(res, 400, "Invalid asset name");
     return;
   }
 
@@ -111,10 +248,29 @@ const handleDownload = async (req: VercelRequest, res: VercelResponse): Promise<
     return;
   }
 
-  const downloadUrl = findInstallerUrl(release, platform);
+  if (typeof assetName === "string") {
+    const downloadUrl = getReleaseAssetUrl(config.repository, release.tag_name, assetName);
+
+    if (shouldProxyDownload(req)) {
+      await proxyReleaseAsset(res, config, release, assetName);
+      return;
+    }
+
+    res.redirect(302, getProxyUrl(downloadUrl, config));
+    return;
+  }
+
+  const installerPlatform = platform;
+
+  if (typeof installerPlatform !== "string") {
+    sendError(res, 400, `Invalid platform. Use one of: ${SUPPORTED_PLATFORMS.join(", ")}`);
+    return;
+  }
+
+  const downloadUrl = findInstallerUrl(release, installerPlatform);
 
   if (!downloadUrl) {
-    sendError(res, 404, `No installer found for ${platform} in ${release.tag_name}`);
+    sendError(res, 404, `No installer found for ${installerPlatform} in ${release.tag_name}`);
     return;
   }
 
@@ -137,9 +293,10 @@ const handleUpdate = async (req: VercelRequest, res: VercelResponse): Promise<vo
     return;
   }
 
-  const manifestUrl = getReleaseManifestUrl(release, config);
+  const manifest = await fetchReleaseManifest(release, config);
+  const rewrittenManifest = rewriteUpdateManifest(manifest, release, req);
 
-  res.redirect(302, manifestUrl);
+  res.status(200).json(rewrittenManifest);
 };
 
 const handleJsonRoute = async (

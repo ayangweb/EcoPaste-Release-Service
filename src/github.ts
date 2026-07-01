@@ -1,10 +1,10 @@
 import { PLATFORM_ASSET_SUFFIX, UPDATE_MANIFEST_NAME } from "./constants.js";
 import type { ApiConfig } from "./config.js";
-import type { GitHubAsset, GitHubRelease } from "./types.js";
+import type { GitHubAsset, GitHubRelease, UpdateManifest } from "./types.js";
 
 const GITHUB_API_BASE = "https://api.github.com/repos";
 
-const getGitHubHeaders = (config: ApiConfig): Record<string, string> => {
+export const getGitHubHeaders = (config: ApiConfig): Record<string, string> => {
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
     "User-Agent": "EcoPaste-Release-Service",
@@ -18,10 +18,20 @@ const getGitHubHeaders = (config: ApiConfig): Record<string, string> => {
   return headers;
 };
 
-const getProxyUrl = (url: string, config: ApiConfig): string => {
+export const getProxyUrl = (url: string, config: ApiConfig): string => {
   if (!config.downloadProxyUrl) return url;
 
   return `${config.downloadProxyUrl.replace(/\/$/, "")}/${url}`;
+};
+
+export const getReleaseAssetUrl = (
+  repository: string,
+  tagName: string,
+  assetName: string
+): string => {
+  return `https://github.com/${repository}/releases/download/${encodeURIComponent(
+    tagName
+  )}/${encodeURIComponent(assetName)}`;
 };
 
 const isSupportedInstaller = (asset: GitHubAsset): boolean => {
@@ -91,18 +101,25 @@ export const findRelease = (
   });
 };
 
-export const getReleaseManifestUrl = (release: GitHubRelease, config: ApiConfig): string => {
-  const manifestAsset = release.assets.find((asset) => {
-    return asset.name === UPDATE_MANIFEST_NAME;
+export const fetchReleaseManifest = async (
+  release: GitHubRelease,
+  config: ApiConfig
+): Promise<UpdateManifest> => {
+  const manifestUrl = getReleaseAssetUrl(
+    config.repository,
+    release.tag_name,
+    UPDATE_MANIFEST_NAME
+  );
+  const response = await fetch(manifestUrl, {
+    headers: getGitHubHeaders(config),
   });
 
-  if (manifestAsset) {
-    return getProxyUrl(manifestAsset.browser_download_url, config);
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`GitHub manifest request failed: ${response.status} ${detail}`);
   }
 
-  const directUrl = `https://github.com/${config.repository}/releases/download/${release.tag_name}/${UPDATE_MANIFEST_NAME}`;
-
-  return getProxyUrl(directUrl, config);
+  return response.json() as Promise<UpdateManifest>;
 };
 
 export const getLatestPrerelease = async (

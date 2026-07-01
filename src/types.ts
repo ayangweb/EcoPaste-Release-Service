@@ -22,3 +22,17 @@ export interface ApiError {
     message: string;
   };
 }
+
+export interface UpdateManifestPlatform {
+  signature: string;
+  url: string;
+  [key: string]: unknown;
+}
+
+export interface UpdateManifest {
+  version: string;
+  notes?: string;
+  pub_date?: string;
+  platforms?: Record<string, UpdateManifestPlatform>;
+  [key: string]: unknown;
+}
