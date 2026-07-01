@@ -38,17 +38,7 @@ const getHeaderValue = (
   return value;
 };
 
-const normalizeBaseUrl = (url: string): string => {
-  const withProtocol = /^https?:\/\//.test(url) ? url : `https://${url}`;
-
-  return withProtocol.replace(/\/$/, "");
-};
-
 const getPublicBaseUrl = (req: VercelRequest): string => {
-  const config = getConfig();
-
-  if (config.publicBaseUrl) return normalizeBaseUrl(config.publicBaseUrl);
-
   const host =
     getHeaderValue(req.headers["x-forwarded-host"]) || req.headers.host || "localhost";
   const protocol = getHeaderValue(req.headers["x-forwarded-proto"]) || "https";

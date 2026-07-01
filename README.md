@@ -46,14 +46,11 @@ Linux is intentionally not exposed.
 GITHUB_REPOSITORY=EcoPasteHub/EcoPaste
 GITHUB_TOKEN=
 DOWNLOAD_PROXY_URL=
-PUBLIC_BASE_URL=
 ```
 
 `DOWNLOAD_PROXY_URL` is optional. Leave it empty to redirect directly to GitHub, or set a prefix such as `https://gh-proxy.com/` to mirror the legacy API behavior.
 
-`PUBLIC_BASE_URL` is optional. Set it to your custom Vercel domain, such as `https://download.example.com`, when you want `/update` to generate stable updater URLs for that domain. If it is empty, the service uses the incoming request host.
-
-`/update` fetches the release `latest.json`, keeps the signatures unchanged, and rewrites every `platforms.*.url` to `/download?version=<tag>&asset=<file>&proxy=1` on this service. This keeps updater traffic on your Vercel/custom domain instead of returning GitHub URLs to the client.
+`/update` fetches the release `latest.json`, keeps the signatures unchanged, and rewrites every `platforms.*.url` to `/download?version=<tag>&asset=<file>&proxy=1` on the same origin used by the request. This keeps updater traffic on your Vercel/custom domain instead of returning GitHub URLs to the client, and lets you change domains without changing configuration.
 
 For EcoPaste's current Rust updater settings, use:
 
