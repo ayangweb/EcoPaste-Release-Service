@@ -8,15 +8,19 @@ This project intentionally uses Vercel native handlers instead of Hono. The API 
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/` | List EcoPaste releases with supported installer assets. |
-| `GET` | `/latest` | Return the latest stable GitHub release. |
-| `GET` | `/stable` | List stable releases. |
-| `GET` | `/beta` | List prereleases. |
-| `GET` | `/download?platform=windows-x64` | Redirect to the latest stable installer for a platform. |
+| `GET` | `/?channel=all` | List EcoPaste releases with supported installer assets. |
+| `GET` | `/?channel=stable` | List stable releases. |
+| `GET` | `/?channel=beta` | List prereleases. |
+| `GET` | `/latest?channel=stable` | Return the latest stable GitHub release. |
+| `GET` | `/latest?channel=beta` | Return the latest prerelease. |
+| `GET` | `/download?channel=stable&platform=windows-x64` | Redirect to the latest stable installer for a platform. |
+| `GET` | `/download?channel=beta&platform=macos-arm` | Redirect to the latest prerelease installer; falls back to stable when no prerelease exists. |
 | `GET` | `/download?version=0.6.0-beta.3&platform=macos-arm` | Redirect to a specific release installer. |
-| `GET` | `/update` | Redirect to the latest stable release `latest.json`. |
-| `GET` | `/update/beta` | Redirect to the latest prerelease `latest.json`; falls back to stable when no prerelease exists. |
+| `GET` | `/update?channel=stable` | Redirect to the latest stable release `latest.json`. |
+| `GET` | `/update?channel=beta` | Redirect to the latest prerelease `latest.json`; falls back to stable when no prerelease exists. |
 | `GET` | `/health` | Return a small health payload. |
+
+`channel` defaults to `all` on `/`, and to `stable` on `/latest`, `/download`, and `/update`.
 
 Supported platforms follow the current Rust-first EcoPaste release workflow:
 
@@ -39,8 +43,8 @@ DOWNLOAD_PROXY_URL=
 For EcoPaste's current Rust updater settings, use:
 
 ```bash
-ECOPASTE_UPDATE_ENDPOINT=https://<your-vercel-domain>/update
-ECOPASTE_UPDATE_BETA_ENDPOINT=https://<your-vercel-domain>/update/beta
+ECOPASTE_UPDATE_ENDPOINT=https://<your-vercel-domain>/update?channel=stable
+ECOPASTE_UPDATE_BETA_ENDPOINT=https://<your-vercel-domain>/update?channel=beta
 ```
 
 ## Local Development

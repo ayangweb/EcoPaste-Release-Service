@@ -11,6 +11,34 @@ import {
 import { getPathname, sendError, setCacheHeaders, setCommonHeaders } from "./http.js";
 import type { GitHubRelease } from "./types.js";
 
+const CHANNEL = {
+  ALL: "all",
+  BETA: "beta",
+  STABLE: "stable",
+} as const;
+
+type Channel = (typeof CHANNEL)[keyof typeof CHANNEL];
+
+const CHANNELS = Object.values(CHANNEL);
+
+const getQueryValue = (value: VercelRequest["query"][string]): string | undefined => {
+  if (Array.isArray(value)) return value[0];
+
+  return value;
+};
+
+const parseChannel = (
+  req: VercelRequest,
+  defaultChannel: Channel,
+  allowedChannels: Channel[] = CHANNELS
+): Channel | undefined => {
+  const value = getQueryValue(req.query.channel) || defaultChannel;
+
+  if (!allowedChannels.includes(value as Channel)) return void 0;
+
+  return value as Channel;
+};
+
 const findInstallerUrl = (release: GitHubRelease, platform: string): string | undefined => {
   const suffix = PLATFORM_ASSET_SUFFIX[platform as keyof typeof PLATFORM_ASSET_SUFFIX];
 
@@ -21,13 +49,47 @@ const findInstallerUrl = (release: GitHubRelease, platform: string): string | un
   })?.browser_download_url;
 };
 
+const filterReleasesByChannel = (
+  releases: GitHubRelease[],
+  channel: Channel
+): GitHubRelease[] => {
+  if (channel === CHANNEL.ALL) return releases;
+
+  return releases.filter((release) => {
+    return channel === CHANNEL.BETA ? release.prerelease : !release.prerelease;
+  });
+};
+
+const getLatestReleaseByChannel = async (
+  channel: Channel,
+  fallbackToStable = true
+): Promise<GitHubRelease | undefined> => {
+  const config = getConfig();
+
+  if (channel === CHANNEL.STABLE || channel === CHANNEL.ALL) {
+    return getLatestStableRelease(config);
+  }
+
+  const betaRelease = await getLatestPrerelease(config);
+  if (betaRelease) return betaRelease;
+  if (!fallbackToStable) return void 0;
+
+  return getLatestStableRelease(config);
+};
+
 const handleDownload = async (req: VercelRequest, res: VercelResponse): Promise<void> => {
   const config = getConfig();
-  const platform = req.query.platform;
-  const version = req.query.version;
+  const platform = getQueryValue(req.query.platform);
+  const version = getQueryValue(req.query.version);
+  const channel = parseChannel(req, CHANNEL.STABLE, [CHANNEL.STABLE, CHANNEL.BETA]);
 
   if (typeof platform !== "string" || !SUPPORTED_PLATFORMS.includes(platform as never)) {
     sendError(res, 400, `Invalid platform. Use one of: ${SUPPORTED_PLATFORMS.join(", ")}`);
+    return;
+  }
+
+  if (!channel) {
+    sendError(res, 400, "Invalid channel. Use one of: stable, beta");
     return;
   }
 
@@ -38,7 +100,7 @@ const handleDownload = async (req: VercelRequest, res: VercelResponse): Promise<
 
     release = findRelease(releases, version);
   } else {
-    release = await getLatestStableRelease(config);
+    release = await getLatestReleaseByChannel(channel);
   }
 
   if (!release) {
@@ -58,10 +120,20 @@ const handleDownload = async (req: VercelRequest, res: VercelResponse): Promise<
 
 const handleUpdate = async (req: VercelRequest, res: VercelResponse): Promise<void> => {
   const config = getConfig();
-  const pathname = getPathname(req);
-  const stableRelease = await getLatestStableRelease(config);
-  const betaRelease = pathname === "/update/beta" ? await getLatestPrerelease(config) : void 0;
-  const release = betaRelease || stableRelease;
+  const channel = parseChannel(req, CHANNEL.STABLE, [CHANNEL.STABLE, CHANNEL.BETA]);
+
+  if (!channel) {
+    sendError(res, 400, "Invalid channel. Use one of: stable, beta");
+    return;
+  }
+
+  const release = await getLatestReleaseByChannel(channel);
+
+  if (!release) {
+    sendError(res, 404, "Release not found");
+    return;
+  }
+
   const manifestUrl = getReleaseManifestUrl(release, config);
 
   res.redirect(302, manifestUrl);
@@ -75,38 +147,35 @@ const handleJsonRoute = async (
   const config = getConfig();
 
   if (pathname === "/" || pathname === "") {
+    const channel = parseChannel(_req, CHANNEL.ALL);
+
+    if (!channel) {
+      sendError(res, 400, `Invalid channel. Use one of: ${CHANNELS.join(", ")}`);
+      return true;
+    }
+
     const releases = await listReleases(config);
 
-    res.status(200).json(releases);
+    res.status(200).json(filterReleasesByChannel(releases, channel));
     return true;
   }
 
   if (pathname === "/latest") {
-    const release = await getLatestStableRelease(config);
+    const channel = parseChannel(_req, CHANNEL.STABLE, [CHANNEL.STABLE, CHANNEL.BETA]);
+
+    if (!channel) {
+      sendError(res, 400, "Invalid channel. Use one of: stable, beta");
+      return true;
+    }
+
+    const release = await getLatestReleaseByChannel(channel, false);
+
+    if (!release) {
+      sendError(res, 404, "Release not found");
+      return true;
+    }
 
     res.status(200).json(release);
-    return true;
-  }
-
-  if (pathname === "/stable") {
-    const releases = await listReleases(config);
-
-    res.status(200).json(
-      releases.filter((release) => {
-        return !release.prerelease;
-      })
-    );
-    return true;
-  }
-
-  if (pathname === "/beta") {
-    const releases = await listReleases(config);
-
-    res.status(200).json(
-      releases.filter((release) => {
-        return release.prerelease;
-      })
-    );
     return true;
   }
 
@@ -144,7 +213,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       return;
     }
 
-    if (pathname === "/update" || pathname === "/update/beta") {
+    if (pathname === "/update") {
       await handleUpdate(req, res);
       return;
     }
