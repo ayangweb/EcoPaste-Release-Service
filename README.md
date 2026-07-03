@@ -11,7 +11,7 @@ This project intentionally uses Vercel native handlers instead of Hono. The API 
 | `GET`  | `/`         | List EcoPaste releases with supported installer assets. |
 | `GET`  | `/latest`   | Return the latest release for a channel.                |
 | `GET`  | `/download` | Redirect or proxy an installer/update asset.            |
-| `GET`  | `/update`   | Return release `latest.json` with Vercel download URLs. |
+| `GET`  | `/update`   | Return release `latest.json` with accelerated asset URLs. |
 | `GET`  | `/health`   | Return a small health payload.                          |
 
 ## Query Parameters
@@ -45,12 +45,12 @@ Linux is intentionally not exposed.
 ```bash
 GITHUB_REPOSITORY=EcoPasteHub/EcoPaste
 GITHUB_TOKEN=
-DOWNLOAD_PROXY_URL=
+DOWNLOAD_PROXY_URL=https://v4.gh-proxy.org
 ```
 
-`DOWNLOAD_PROXY_URL` is optional. Leave it empty to redirect directly to GitHub, or set a prefix such as `https://gh-proxy.com/` to mirror the legacy API behavior.
+`DOWNLOAD_PROXY_URL` is the reusable download acceleration prefix. It defaults to `https://v4.gh-proxy.org`; set it to another prefix when you want to switch mirrors, or set it to an empty string to redirect directly to GitHub.
 
-`/update` fetches the release `latest.json`, keeps the signatures unchanged, and rewrites every `platforms.*.url` to `/download?version=<tag>&asset=<file>&proxy=1` on the same origin used by the request. This keeps updater traffic on your Vercel/custom domain instead of returning GitHub URLs to the client, and lets you change domains without changing configuration.
+`/update` fetches the release `latest.json`, keeps the signatures unchanged, and rewrites every `platforms.*.url` by prefixing the original GitHub release asset URL. For example, `https://github.com/EcoPasteHub/EcoPaste/releases/download/v0.6.0-beta.2/EcoPaste_0.6.0-beta.2_aarch64.dmg` becomes `https://v4.gh-proxy.org/https://github.com/EcoPasteHub/EcoPaste/releases/download/v0.6.0-beta.2/EcoPaste_0.6.0-beta.2_aarch64.dmg`.
 
 For EcoPaste's current Rust updater settings, use:
 

@@ -1,4 +1,5 @@
 export const DEFAULT_REPOSITORY = "EcoPasteHub/EcoPaste";
+export const DEFAULT_DOWNLOAD_PROXY_URL = "https://v4.gh-proxy.org";
 
 export const PLATFORM = {
   WINDOWS_X64: "windows-x64",

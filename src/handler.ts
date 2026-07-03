@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { Readable } from "node:stream";
-import { getConfig } from "./config.js";
+import { getConfig, type ApiConfig } from "./config.js";
 import { PLATFORM_ASSET_SUFFIX, SUPPORTED_PLATFORMS } from "./constants.js";
 import {
   fetchReleaseManifest,
@@ -28,22 +28,6 @@ const getQueryValue = (value: VercelRequest["query"][string]): string | undefine
   if (Array.isArray(value)) return value[0];
 
   return value;
-};
-
-const getHeaderValue = (
-  value: VercelRequest["headers"][string]
-): string | undefined => {
-  if (Array.isArray(value)) return value[0];
-
-  return value;
-};
-
-const getPublicBaseUrl = (req: VercelRequest): string => {
-  const host =
-    getHeaderValue(req.headers["x-forwarded-host"]) || req.headers.host || "localhost";
-  const protocol = getHeaderValue(req.headers["x-forwarded-proto"]) || "https";
-
-  return `${protocol}://${host}`.replace(/\/$/, "");
 };
 
 const parseChannel = (req: VercelRequest): Channel | null | undefined => {
@@ -90,27 +74,27 @@ const shouldProxyDownload = (req: VercelRequest): boolean => {
 const rewriteUpdateManifest = (
   manifest: UpdateManifest,
   release: GitHubRelease,
-  req: VercelRequest
+  config: ApiConfig
 ): UpdateManifest => {
   if (!manifest.platforms) return manifest;
 
-  const baseUrl = getPublicBaseUrl(req);
   const platforms = Object.fromEntries(
     Object.entries(manifest.platforms).map(([platform, value]) => {
       const assetName = getAssetNameFromUrl(value.url);
 
       if (!assetName || !isSafeAssetName(assetName)) return [platform, value];
 
-      const url = new URL("/download", baseUrl);
-      url.searchParams.set("version", release.tag_name);
-      url.searchParams.set("asset", assetName);
-      url.searchParams.set("proxy", "1");
+      const downloadUrl = getReleaseAssetUrl(
+        config.repository,
+        release.tag_name,
+        assetName
+      );
 
       return [
         platform,
         {
           ...value,
-          url: url.toString(),
+          url: getProxyUrl(downloadUrl, config),
         },
       ];
     })
@@ -284,7 +268,7 @@ const handleUpdate = async (req: VercelRequest, res: VercelResponse): Promise<vo
   }
 
   const manifest = await fetchReleaseManifest(release, config);
-  const rewrittenManifest = rewriteUpdateManifest(manifest, release, req);
+  const rewrittenManifest = rewriteUpdateManifest(manifest, release, config);
 
   res.status(200).json(rewrittenManifest);
 };
