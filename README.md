@@ -45,12 +45,12 @@ Linux is intentionally not exposed.
 ```bash
 GITHUB_REPOSITORY=EcoPasteHub/EcoPaste
 GITHUB_TOKEN=
-DOWNLOAD_PROXY_URL=https://v4.gh-proxy.org
+DOWNLOAD_PROXY_URL=https://cdn.gh-proxy.org
 ```
 
-`DOWNLOAD_PROXY_URL` is the reusable download acceleration prefix. It defaults to `https://v4.gh-proxy.org`; set it to another prefix when you want to switch mirrors, or set it to an empty string to redirect directly to GitHub.
+`DOWNLOAD_PROXY_URL` is the reusable download acceleration prefix. It defaults to `https://cdn.gh-proxy.org`; set it to another prefix when you want to switch mirrors, or set it to an empty string to redirect directly to GitHub.
 
-`/update` fetches the release `latest.json`, keeps the signatures unchanged, and rewrites every `platforms.*.url` by prefixing the original GitHub release asset URL. For example, `https://github.com/EcoPasteHub/EcoPaste/releases/download/v0.6.0-beta.2/EcoPaste_0.6.0-beta.2_aarch64.dmg` becomes `https://v4.gh-proxy.org/https://github.com/EcoPasteHub/EcoPaste/releases/download/v0.6.0-beta.2/EcoPaste_0.6.0-beta.2_aarch64.dmg`.
+`/update` fetches the release `latest.json`, keeps the signatures unchanged, and rewrites every `platforms.*.url` by prefixing the original GitHub release asset URL. For example, `https://github.com/EcoPasteHub/EcoPaste/releases/download/v0.6.0-beta.2/EcoPaste_0.6.0-beta.2_aarch64.dmg` becomes `https://cdn.gh-proxy.org/https://github.com/EcoPasteHub/EcoPaste/releases/download/v0.6.0-beta.2/EcoPaste_0.6.0-beta.2_aarch64.dmg`.
 
 For EcoPaste's current Rust updater settings, use:
 
