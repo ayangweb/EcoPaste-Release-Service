@@ -6,7 +6,6 @@ import {
   fetchReleaseManifest,
   findRelease,
   getGitHubHeaders,
-  getLatestPrerelease,
   getLatestStableRelease,
   getProxyUrl,
   getReleaseAssetUrl,
@@ -18,11 +17,17 @@ import type { GitHubRelease, UpdateManifest } from "./types.js";
 const CHANNEL = {
   STABLE: "stable",
   BETA: "beta",
+  NIGHTLY: "nightly",
 } as const;
 
 type Channel = (typeof CHANNEL)[keyof typeof CHANNEL];
+type PrereleaseChannel = Exclude<Channel, typeof CHANNEL.STABLE>;
 
 const CHANNELS = Object.values(CHANNEL);
+const PRERELEASE_CHANNEL_PATTERNS: Record<PrereleaseChannel, RegExp> = {
+  [CHANNEL.BETA]: /(?:^|-)(?:beta|rc)(?:[.-]|$)/i,
+  [CHANNEL.NIGHTLY]: /(?:^|-)nightly(?:[.-]|$)/i,
+};
 
 const getQueryValue = (value: VercelRequest["query"][string]): string | undefined => {
   if (Array.isArray(value)) return value[0];
@@ -69,6 +74,26 @@ const shouldProxyDownload = (req: VercelRequest): boolean => {
   const value = getQueryValue(req.query.proxy);
 
   return value === "1" || value === "true";
+};
+
+const getReleaseIdentifier = (release: GitHubRelease): string => {
+  return `${release.tag_name} ${release.name ?? ""}`;
+};
+
+const isPrereleaseChannel = (
+  release: GitHubRelease,
+  channel: PrereleaseChannel
+): boolean => {
+  return (
+    release.prerelease &&
+    PRERELEASE_CHANNEL_PATTERNS[channel].test(getReleaseIdentifier(release))
+  );
+};
+
+const isReleaseInChannel = (release: GitHubRelease, channel: Channel): boolean => {
+  if (channel === CHANNEL.STABLE) return !release.prerelease;
+
+  return isPrereleaseChannel(release, channel);
 };
 
 const rewriteUpdateManifest = (
@@ -155,7 +180,7 @@ const filterReleasesByChannel = (
   if (!channel) return releases;
 
   return releases.filter((release) => {
-    return channel === CHANNEL.BETA ? release.prerelease : !release.prerelease;
+    return isReleaseInChannel(release, channel);
   });
 };
 
@@ -175,8 +200,12 @@ const getLatestReleaseByChannel = async (
     return getLatestStableRelease(config);
   }
 
-  const betaRelease = await getLatestPrerelease(config);
-  if (betaRelease) return betaRelease;
+  const releases = await listReleases(config);
+  const prerelease = releases.find((release) => {
+    return isPrereleaseChannel(release, channel);
+  });
+
+  if (prerelease) return prerelease;
   if (!fallbackToStable) return void 0;
 
   return getLatestStableRelease(config);
@@ -203,7 +232,7 @@ const handleDownload = async (req: VercelRequest, res: VercelResponse): Promise<
   }
 
   if (channel === null) {
-    sendError(res, 400, "Invalid channel. Use one of: stable, beta");
+    sendError(res, 400, `Invalid channel. Use one of: ${CHANNELS.join(", ")}`);
     return;
   }
 
@@ -256,7 +285,7 @@ const handleUpdate = async (req: VercelRequest, res: VercelResponse): Promise<vo
   const channel = parseChannel(req);
 
   if (channel === null) {
-    sendError(res, 400, "Invalid channel. Use one of: stable, beta");
+    sendError(res, 400, `Invalid channel. Use one of: ${CHANNELS.join(", ")}`);
     return;
   }
 

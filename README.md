@@ -18,7 +18,7 @@ This project intentionally uses Vercel native handlers instead of Hono. The API 
 
 | Endpoint                               | Parameter  | Values                                                            | Default                           | Description                                                                            |
 | -------------------------------------- | ---------- | ----------------------------------------------------------------- | --------------------------------- | -------------------------------------------------------------------------------------- |
-| `/`, `/latest`, `/download`, `/update` | `channel`  | `stable`, `beta`                                                  | Omitted, which means all releases | Selects a release channel. Leave it empty to use the newest release from all channels. |
+| `/`, `/latest`, `/download`, `/update` | `channel`  | `stable`, `beta`, `nightly`                                       | Omitted, which means all releases | Selects a release channel. Leave it empty to use the newest release from all channels. |
 | `/download`                            | `platform` | `windows-x64`, `macos-arm`, `macos-x64`                           | Required unless `asset` is set    | Selects the installer platform.                                                        |
 | `/download`                            | `version`  | Release tag or version, such as `v0.6.0-beta.3` or `0.6.0-beta.3` | Latest release for `channel`      | Selects a specific release instead of the latest channel release.                      |
 | `/download`                            | `asset`    | Release asset file name, such as `EcoPaste_x64.app.tar.gz`        | Empty                             | Downloads an exact updater asset. Used by rewritten `/update` manifests.               |
@@ -30,7 +30,11 @@ Example:
 /download?channel=beta&platform=macos-arm
 ```
 
-When `channel=beta` is used on `/download` or `/update`, the service falls back to `stable` if no prerelease exists.
+Nightly releases use tags like `v1.0.1-nightly.20260708.4`.
+
+The `beta` channel matches both beta and release-candidate tags, such as `v1.0.1-beta.1` and `v1.0.1-rc.1`.
+
+When `channel=beta` or `channel=nightly` is used on `/download` or `/update`, the service falls back to `stable` if no matching prerelease exists.
 
 Supported platforms follow the current Rust-first EcoPaste release workflow:
 
@@ -57,6 +61,7 @@ For EcoPaste's current Rust updater settings, use:
 ```bash
 ECOPASTE_UPDATE_ENDPOINT=https://<your-vercel-domain>/update?channel=stable
 ECOPASTE_UPDATE_BETA_ENDPOINT=https://<your-vercel-domain>/update?channel=beta
+ECOPASTE_UPDATE_NIGHTLY_ENDPOINT=https://<your-vercel-domain>/update?channel=nightly
 ```
 
 ## Local Development
