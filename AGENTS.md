@@ -9,7 +9,8 @@
 ## Commit Rules
 
 - Use Conventional Commits for every commit and push.
-- Format commit messages as `type(scope): summary`.
+- Format commit messages as `type: summary` or `type(scope): summary`.
+- Add a scope only when it clarifies the affected area for the final change.
 - Use common types such as `feat`, `fix`, `docs`, `refactor`, `test`, `chore`, and `ci`.
 - Keep the summary concise, imperative, and lowercase unless it contains a proper noun.
 - Add a body when the change needs extra context, migration notes, or behavioral details.
@@ -17,7 +18,9 @@
 Examples:
 
 ```text
+feat: support nightly release channel
 feat(api): support nightly release channel
 fix(api): include rc releases in beta channel
+docs: document update endpoints
 docs(readme): document update endpoints
 ```
