@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "vercel dev",
+    "test": "tsc --project tsconfig.test.json && node --test tests/*.test.mjs",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

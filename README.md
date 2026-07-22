@@ -34,7 +34,7 @@ Nightly releases use tags like `v1.0.1-nightly.20260708.4`.
 
 The `beta` channel matches both beta and release-candidate tags, such as `v1.0.1-beta.1` and `v1.0.1-rc.1`.
 
-When `channel=beta` or `channel=nightly` is used on `/download` or `/update`, the service falls back to `stable` if no matching prerelease exists.
+When `channel=beta` or `channel=nightly` is used on `/download` or `/update`, the service compares the latest stable release with the latest matching prerelease. It returns the stable release when its semantic version is newer or equal, and only returns the prerelease when that version is newer.
 
 Supported platforms follow the current Rust-first EcoPaste release workflow:
 

@@ -1,0 +1,9 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "./node_modules/.cache/ecopaste-release-service-tests",
+    "rootDir": "."
+  },
+  "include": ["src/version.ts"]
+}

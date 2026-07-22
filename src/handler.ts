@@ -13,6 +13,7 @@ import {
 } from "./github.js";
 import { getPathname, sendError, setCacheHeaders, setCommonHeaders } from "./http.js";
 import type { GitHubRelease, UpdateManifest } from "./types.js";
+import { selectNewerRelease } from "./version.js";
 
 const CHANNEL = {
   STABLE: "stable",
@@ -200,15 +201,27 @@ const getLatestReleaseByChannel = async (
     return getLatestStableRelease(config);
   }
 
-  const releases = await listReleases(config);
+  const releasesPromise = listReleases(config);
+
+  if (!fallbackToStable) {
+    const releases = await releasesPromise;
+
+    return releases.find((release) => {
+      return isPrereleaseChannel(release, channel);
+    });
+  }
+
+  const [releases, stableRelease] = await Promise.all([
+    releasesPromise,
+    getLatestStableRelease(config),
+  ]);
   const prerelease = releases.find((release) => {
     return isPrereleaseChannel(release, channel);
   });
 
-  if (prerelease) return prerelease;
-  if (!fallbackToStable) return void 0;
+  if (!prerelease) return stableRelease;
 
-  return getLatestStableRelease(config);
+  return selectNewerRelease(stableRelease, prerelease);
 };
 
 const handleDownload = async (req: VercelRequest, res: VercelResponse): Promise<void> => {
