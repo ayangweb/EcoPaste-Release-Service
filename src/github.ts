@@ -34,6 +34,42 @@ export const getReleaseAssetUrl = (
   )}/${encodeURIComponent(assetName)}`;
 };
 
+export const fetchReleaseAsset = async (
+  assetApiUrl: string,
+  config: ApiConfig
+): Promise<GitHubAsset> => {
+  let url: URL;
+
+  try {
+    url = new URL(assetApiUrl);
+  } catch {
+    throw new Error(`Invalid GitHub asset API URL: ${assetApiUrl}`);
+  }
+
+  const assetPathPrefix = `/repos/${config.repository}/releases/assets/`;
+  const assetId = url.pathname.slice(assetPathPrefix.length);
+
+  if (
+    url.protocol !== "https:" ||
+    url.hostname !== "api.github.com" ||
+    !url.pathname.startsWith(assetPathPrefix) ||
+    !/^\d+$/.test(assetId)
+  ) {
+    throw new Error(`Invalid GitHub asset API URL: ${assetApiUrl}`);
+  }
+
+  const response = await fetch(url, {
+    headers: getGitHubHeaders(config),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`GitHub asset API request failed: ${response.status} ${detail}`);
+  }
+
+  return response.json() as Promise<GitHubAsset>;
+};
+
 const isSupportedInstaller = (asset: GitHubAsset): boolean => {
   return Object.values(PLATFORM_ASSET_SUFFIX).some((suffix) => {
     return asset.name.endsWith(suffix);

@@ -3,6 +3,7 @@ import { Readable } from "node:stream";
 import { getConfig, type ApiConfig } from "./config.js";
 import { PLATFORM_ASSET_SUFFIX, SUPPORTED_PLATFORMS } from "./constants.js";
 import {
+  fetchReleaseAsset,
   fetchReleaseManifest,
   findRelease,
   getGitHubHeaders,
@@ -56,17 +57,6 @@ const findInstallerUrl = (release: GitHubRelease, platform: string): string | un
   })?.browser_download_url;
 };
 
-const getAssetNameFromUrl = (url: string): string | undefined => {
-  try {
-    const pathname = new URL(url).pathname;
-    const assetName = pathname.split("/").filter(Boolean).pop();
-
-    return assetName ? decodeURIComponent(assetName) : void 0;
-  } catch {
-    return void 0;
-  }
-};
-
 const isSafeAssetName = (assetName: string): boolean => {
   return assetName.length > 0 && !assetName.includes("/") && !assetName.includes("\\");
 };
@@ -97,33 +87,39 @@ const isReleaseInChannel = (release: GitHubRelease, channel: Channel): boolean =
   return isPrereleaseChannel(release, channel);
 };
 
-const rewriteUpdateManifest = (
+const rewriteUpdateManifest = async (
   manifest: UpdateManifest,
-  release: GitHubRelease,
   config: ApiConfig
-): UpdateManifest => {
+): Promise<UpdateManifest> => {
   if (!manifest.platforms) return manifest;
 
+  const assetRequests = new Map<string, Promise<string>>();
+  const getDownloadUrl = (assetApiUrl: string): Promise<string> => {
+    const existingRequest = assetRequests.get(assetApiUrl);
+
+    if (existingRequest) return existingRequest;
+
+    const request = fetchReleaseAsset(assetApiUrl, config).then((asset) => {
+      return asset.browser_download_url;
+    });
+    assetRequests.set(assetApiUrl, request);
+
+    return request;
+  };
   const platforms = Object.fromEntries(
-    Object.entries(manifest.platforms).map(([platform, value]) => {
-      const assetName = getAssetNameFromUrl(value.url);
+    await Promise.all(
+      Object.entries(manifest.platforms).map(async ([platform, value]) => {
+        const downloadUrl = await getDownloadUrl(value.url);
 
-      if (!assetName || !isSafeAssetName(assetName)) return [platform, value];
-
-      const downloadUrl = getReleaseAssetUrl(
-        config.repository,
-        release.tag_name,
-        assetName
-      );
-
-      return [
-        platform,
-        {
-          ...value,
-          url: getProxyUrl(downloadUrl, config),
-        },
-      ];
-    })
+        return [
+          platform,
+          {
+            ...value,
+            url: getProxyUrl(downloadUrl, config),
+          },
+        ];
+      })
+    )
   );
 
   return {
@@ -310,7 +306,7 @@ const handleUpdate = async (req: VercelRequest, res: VercelResponse): Promise<vo
   }
 
   const manifest = await fetchReleaseManifest(release, config);
-  const rewrittenManifest = rewriteUpdateManifest(manifest, release, config);
+  const rewrittenManifest = await rewriteUpdateManifest(manifest, config);
 
   res.status(200).json(rewrittenManifest);
 };
